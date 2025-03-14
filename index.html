@@ -141,7 +141,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script>
-        const scriptURL = 'Yhttps://script.google.com/macros/s/AKfycbzQac2Zz5_NNKrO9bs4lFL6xNl9t6KfX2n0_pQT7bpE39SdUiorlxNAaICvqypLQUqA/exec';
+        const scriptURL = 'https://script.google.com/macros/s/AKfycbwOgaCxHWcfCi7EklVOmmxhYWaHtUbxZfg9EZ3tDX2XhKwgz3th0YbvEgFs4sGq0RtC/exec';
 
         $(document).ready(function() {
             $('#invoiceForm').submit(async function(e) {
@@ -160,20 +160,20 @@
                     paymentMode: $('[name="paymentMode"]:checked').val()
                 };
 
-                // Calculate total
-                const total = (formData.registration * 1) + (formData.fees * formData.duration);
-
-                // Get invoice number from Google Sheet
                 try {
-                    const response = await $.ajax({
-                        url: scriptURL,
+                    // Get invoice number using JSONP
+                    const invoiceResponse = await $.ajax({
+                        url: scriptURL + '?action=getInvoiceNumber',
                         method: 'GET',
-                        dataType: 'json',
-                        data: {action: 'getInvoiceNumber'}
+                        dataType: 'jsonp',
+                        crossDomain: true
                     });
 
+                    // Calculate total
+                    const total = (formData.registration * 1) + (formData.fees * formData.duration);
+
                     // Update preview
-                    $('#invoiceNumber').text(response.invoiceNumber);
+                    $('#invoiceNumber').text(invoiceResponse.invoiceNumber);
                     $('#invoiceDate').text(new Date().toLocaleDateString());
                     $('#previewParent').text(formData.parentName);
                     $('#previewKid').text(formData.kidName);
@@ -186,33 +186,33 @@
                     $('#previewDueDate').text(formData.dueDate);
                     $('#previewTotalAmount').text(total);
 
-                    // Show preview
-                    $('#invoicePreview').removeClass('d-none');
-
                     // Generate PDF
                     const { jsPDF } = window.jspdf;
                     const doc = new jsPDF();
                     
-                    // Add invoice content to PDF
+                    // Add content to PDF
                     doc.html(document.getElementById('invoicePreview'), {
-                        callback: function(doc) {
+                        callback: async function(doc) {
                             // Save PDF
                             const pdfBlob = doc.output('blob');
                             
-                            // Submit data to Google Sheets
-                            const formDataWithInvoice = {
+                            // Prepare data for Google Sheets
+                            const saveData = {
                                 ...formData,
-                                invoiceNumber: response.invoiceNumber,
+                                invoiceNumber: invoiceResponse.invoiceNumber,
                                 totalAmount: total,
-                                pdfBlob: pdfBlob
+                                pdfData: await blobToBase64(pdfBlob)
                             };
 
+                            // Save data to Google Sheets
                             $.ajax({
                                 url: scriptURL,
                                 method: 'POST',
-                                data: formDataWithInvoice,
+                                data: JSON.stringify(saveData),
+                                contentType: 'application/json',
                                 success: function(response) {
                                     alert('Invoice generated and saved successfully!');
+                                    window.location.reload();
                                 },
                                 error: function(error) {
                                     console.error('Error:', error);
@@ -222,10 +222,21 @@
                         x: 10,
                         y: 10
                     });
+
                 } catch (error) {
                     console.error('Error:', error);
+                    alert('Error generating invoice: ' + error.message);
                 }
             });
+
+            function blobToBase64(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            }
         });
     </script>
 </body>
